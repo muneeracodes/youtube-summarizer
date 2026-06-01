@@ -1,0 +1,6 @@
+streamlit
+openai-whisper
+yt-dlp
+openai
+langdetect
+python-dotenv

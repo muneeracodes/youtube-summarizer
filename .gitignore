@@ -1,0 +1,13 @@
+# Virtual Environment
+venv/
+.venv/
+ENV/
+
+# Local Caches & Downloads
+audio/
+__pycache__/
+*.pyc
+
+# Environment & Secrets
+.env
+.streamlit/secrets.toml
