@@ -1,34 +1,96 @@
-# 🎬 AI-Powered YouTube Summarizer & Timestamp Extractor
+# YouTube Intelligence Pipeline
 
-A sleek, full-stack intelligence pipeline that transforms lengthy YouTube videos or full playlists into structured markdown summaries, actionable takeaways, and timestamped chronological markers. Built using a localized system-level transcription layout paired with blazing-fast cloud inference.
+Transforms long-form YouTube videos and full playlists into structured
+summaries, key insights, and timestamped markers — with automatic multilingual
+detection. Paste a URL, get a production-quality briefing document in seconds.
 
----
+**Live demo:** [link] <!-- deploy to Render/Railway free tier and add this -->
 
-## 🚀 Key Features
-
-- **Double-Mode Scope:** Seamlessly parses single video links or complete public YouTube Playlists.
-- **Hybrid AI Architecture:** Orchestrates high-speed system processing via `yt-dlp` and `FFmpeg` with cloud-hosted LLM processing.
-- **Multilingual Intelligence:** Automatically evaluates and identifies input spoken dialects (e.g., Urdu, Hindi, Spanish) and outputs perfectly structured English summaries.
-- **Adaptive Execution Layouts:** Offers custom summary formatting—Bullet Points, Short Syntheses, In-Depth Overviews, or Sequential Time-Stamps.
+![Demo GIF] <!-- record with LICEcap or Kap and add here — this is critical -->
 
 ---
 
-## 🛠️ System Architecture & Tech Stack
+## The problem it solves
 
-- **Frontend Core:** Streamlit Interactive Dynamic Dashboard Engine
-- **Audio Scraper:** `yt-dlp` + Native System `FFmpeg` Media Layer
-- **Speech-to-Text Processing:** Groq Cloud-Optimized Whisper API (`distil-whisper-large-v3-en`)
-- **Inference Engine:** Groq LLaMA 3.3 Versatile Core Architecture (`llama-3.3-70b-versatile`)
-- **Language Profiler:** `langdetect` Factory Configuration Matrix
+Researchers, students, and content teams spend hours watching long videos
+to extract key information. This pipeline reduces that to a 30-second
+automated workflow — regardless of the video's original language.
 
 ---
 
-## 📋 Installation & Local Setup
+## Architecture
 
-### 1. Prerequisites
-Ensure you have **Python 3.10+** and **FFmpeg** installed on your operating system.
+YouTube URL
+│
+▼
+yt-dlp (audio extraction)
+│
+▼
+FFmpeg (audio processing)
+│
+▼
+Groq Whisper API (speech-to-text, multilingual)
+│
+▼
+langdetect (language identification)
+│
+▼
+Groq LLaMA 3.3 70B (summarization, insight extraction, timestamp generation)
+│
+▼
+React Frontend (summary display, format selection, export)
 
-### 2. Clone the Repository
+---
+
+## Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | React · JavaScript · CSS |
+| Backend | Python · Flask |
+| Speech-to-Text | Groq Whisper API (distil-whisper-large-v3-en) |
+| LLM Inference | Groq · LLaMA 3.3 70B Versatile |
+| Language Detection | langdetect |
+| Audio Processing | yt-dlp · FFmpeg |
+
+---
+
+## Key capabilities
+
+- Single video or full playlist processing
+- Automatic language detection — outputs English regardless of input language
+  (tested: Urdu, Hindi, Spanish)
+- Four output modes: bullet summary, short synthesis, in-depth overview,
+  timestamped markers
+- Processes a 1-hour video in under 90 seconds via Groq's inference speed
+
+---
+
+## Local setup
+
+**Requirements:** Python 3.10+, FFmpeg, Node.js 18+
+
 ```bash
-git clone [https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git](https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git)
-cd YOUR_REPO_NAME
+# Clone
+git clone https://github.com/muneeracodes/youtube-summarizer.git
+cd youtube-summarizer
+
+# Backend
+cd backend
+pip install -r requirements.txt
+# Add your GROQ_API_KEY to .env
+python app.py
+
+# Frontend
+cd ../frontend
+npm install
+npm run dev
+```
+
+---
+
+## What I'd add next
+
+- Export to Notion / Google Docs via API
+- n8n automation: trigger summarization on new YouTube subscriptions
+- Fine-tuned prompt templates by content type (lecture, podcast, tutorial)
