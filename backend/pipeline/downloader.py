@@ -4,8 +4,10 @@ import os
 # Cross-platform environment resolution for FFmpeg
 _ffmpeg_dir = r"C:\ffmpeg\bin" if os.name == 'nt' else None
 
+# Absolute path to cookies.txt — always finds it regardless of where the server is launched from
+_cookies_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.txt")
+
 def get_video_id(url: str) -> str:
-    """Helper to safely extract the 11-character YouTube video ID without hitting any network endpoints."""
     if "v=" in url:
         return url.split("v=")[-1].split("&")[0]
     elif "youtu.be/" in url:
@@ -17,11 +19,8 @@ def download_audio(url: str, output_dir: str = "audio"):
     os.makedirs(output_dir, exist_ok=True)
     video_id = get_video_id(url)
 
-    # Base options designed to emulate a standard mobile app interface
     ydl_opts = {
         "format": "bestaudio/best",
-        'cookiefile': 'cookies.txt', 
-       
         "outtmpl": f"{output_dir}/%(id)s.%(ext)s",
         "postprocessors": [{
             "key": "FFmpegExtractAudio",
@@ -42,11 +41,17 @@ def download_audio(url: str, output_dir: str = "audio"):
         }
     }
 
+    # Only add cookiefile if it actually exists — prevents yt-dlp from crashing when file is missing
+    if os.path.exists(_cookies_path):
+        ydl_opts["cookiefile"] = _cookies_path
+        print(f"[Downloader] Using cookies from: {_cookies_path}")
+    else:
+        print(f"[Downloader] WARNING: cookies.txt not found at {_cookies_path} — proceeding without cookies")
+
     if _ffmpeg_dir and os.path.exists(_ffmpeg_dir):
         ydl_opts["ffmpeg_location"] = _ffmpeg_dir
 
     try:
-        # Try running standard audio stream extraction
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
 
@@ -71,20 +76,16 @@ def download_audio(url: str, output_dir: str = "audio"):
                     "thumbnail": info.get("thumbnail", ""),
                 }
                 return path, meta
-                
+
     except Exception as e:
-        # 🌟 THE ABSOLUTE FALLBACK CRITICAL CORRECTION:
-        # If yt-dlp fails for ANY reason (including bot checks), completely skip network metadata calls.
-        # Construct a safe mockup dictionary manually using local parsing.
         print(f"[Core Guard] yt-dlp completely blocked. Switching to isolated transcript mode: {str(e)}")
-        
+
         meta = {
             "title": "YouTube Video Resource",
             "duration": 0,
             "url": url,
             "thumbnail": f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
         }
-        # Returning None for the path tells app.py to fetch the transcript instantly via API
         return None, meta
 
 

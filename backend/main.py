@@ -4,12 +4,10 @@ import shutil
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import youtube_transcript_api
+from youtube_transcript_api import YouTubeTranscriptApi  # BUG 1 FIX: correct import
 
-# Force Python to recognize the current directory for absolute package imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# Import your pipeline modules safely
 from pipeline.downloader import download_audio, is_playlist, format_duration
 from pipeline.transcriber import transcribe, get_transcript_with_timestamps
 from pipeline.detector import detect_language
@@ -17,7 +15,6 @@ from pipeline.summarizer import summarize
 
 app = FastAPI(title="YouTube Summarizer API", version="2.0.0")
 
-# PRODUCTION CORS: Reads allowed origins from environment variable (comma-separated for Vercel/Local)
 allowed_origins_raw = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000")
 ALLOWED_ORIGINS = [origin.strip() for origin in allowed_origins_raw.split(",")]
 
@@ -36,7 +33,6 @@ class SummarizeRequest(BaseModel):
 
 @app.get("/")
 def health_check():
-    """Health check endpoint for Render to verify the service container is alive."""
     return {"status": "healthy", "service": "YouTube Summarizer Engine"}
 
 @app.post("/api/summarize")
@@ -45,23 +41,23 @@ async def summarize_video(req: SummarizeRequest):
         video_url = str(req.url)
         playlist = is_playlist(video_url)
 
-        # 🌟 FIXED ID EXTRACTION: Wipes out trailing share query parameters (?si=...) safely
         raw_id = video_url.split("v=")[-1].split("&")[0] if "v=" in video_url else video_url.split("/")[-1]
         video_id = raw_id.split("?")[0].split("&")[0]
 
         if playlist:
             audio_files, metas = download_audio(video_url)
             results = []
-            
+
             for audio_path, meta in zip(audio_files, metas):
                 if audio_path is None:
                     try:
                         raw_loop_id = meta["url"].split("v=")[-1].split("&")[0] if "v=" in meta["url"] else meta["url"].split("/")[-1]
                         loop_id = raw_loop_id.split("?")[0].split("&")[0]
-                        
-                        # Fix invocation wrapper for playlist execution layers
-                        srt = youtube_transcript_api.YouTubeTranscriptApi.get_transcript(loop_id)
-                        text_to_summarize = " ".join([item["text"] for item in srt])
+
+                        # BUG 2 FIX: same fix applied to playlist fallback
+                        api = YouTubeTranscriptApi()
+                        transcript_list = api.fetch(loop_id)
+                        text_to_summarize = " ".join([snippet.text for snippet in transcript_list])
                         lang = detect_language(text_to_summarize)
                         summary = summarize(text_to_summarize, req.summary_type, lang)
                     except Exception:
@@ -87,27 +83,25 @@ async def summarize_video(req: SummarizeRequest):
 
         else:
             audio_path, meta = download_audio(video_url)
-            
-            # 🌟 CORE FAILOVER: Fixed module instance tracking attribute call
+
             if audio_path is None:
                 print(f"[API Guard] Audio stream blocked by YouTube. Activating Transcript Fallback for Video ID: {video_id}")
                 try:
-                    # 🔗 FIXED CALL: Target via explicit module declaration namespace
-
+                    # BUG 3 FIX: was calling YouTubeTranscriptApi() without importing it properly
+                    # AND was using undefined variable `srt` instead of transcript_list
                     api = YouTubeTranscriptApi()
                     transcript_list = api.fetch(video_id)
-                    text = " ".join([snippet.text for snippet in transcript_list])
-                   
+                    text_to_summarize = " ".join([snippet.text for snippet in transcript_list])  # BUG 4 FIX: was `srt` (undefined)
+
                     print("[Fallback Router] Successfully extracted clean transcript lines.")
-                    
-                    text_to_summarize = " ".join([item["text"] for item in srt])
+
                     lang = detect_language(text_to_summarize)
-                    
+
                     summary_mode = "bullets" if req.summary_type == "timestamps" else req.summary_type
                     summary = summarize(text_to_summarize, summary_mode, lang)
-                    
+
                     if req.summary_type == "timestamps":
-                        summary = "(Note: Timestamps unavailable due to stream fallback integration mode)\n\n" + summary
+                        summary = "(Note: Timestamps unavailable due to stream fallback mode)\n\n" + summary
 
                     return {
                         "type": "single",
@@ -118,15 +112,14 @@ async def summarize_video(req: SummarizeRequest):
                         "language": lang,
                         "summary": summary,
                     }
-                    
+
                 except Exception as transcript_err:
                     print(f"[Fallback Crash] Complete dead end: {str(transcript_err)}")
                     raise HTTPException(
-                        status_code=500, 
+                        status_code=500,
                         detail="YouTube bot security is blocking this request, and this video does not have any captions or subtitles available to fall back on."
                     )
 
-            # Standard pipeline execution if audio stream downloads successfully
             transcript_data = transcribe(audio_path, req.model_size)
             plain_text = transcript_data["text"]
             segments = transcript_data["segments"]
