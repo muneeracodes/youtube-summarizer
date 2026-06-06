@@ -4,7 +4,7 @@ import shutil
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from youtube_transcript_api import YouTubeTranscriptApi
+import youtube_transcript_api
 
 # Force Python to recognize the current directory for absolute package imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -45,8 +45,9 @@ async def summarize_video(req: SummarizeRequest):
         video_url = str(req.url)
         playlist = is_playlist(video_url)
 
-        # Extract standard unique video ID for transcript fallback matching
-        video_id = video_url.split("v=")[-1].split("&")[0] if "v=" in video_url else video_url.split("/")[-1]
+        # 🌟 FIXED ID EXTRACTION: Wipes out trailing share query parameters (?si=...) safely
+        raw_id = video_url.split("v=")[-1].split("&")[0] if "v=" in video_url else video_url.split("/")[-1]
+        video_id = raw_id.split("?")[0].split("&")[0]
 
         if playlist:
             audio_files, metas = download_audio(video_url)
@@ -55,23 +56,11 @@ async def summarize_video(req: SummarizeRequest):
             for audio_path, meta in zip(audio_files, metas):
                 if audio_path is None:
                     try:
-                        loop_id = meta["url"].split("v=")[-1].split("&")[0] if "v=" in meta["url"] else meta["url"].split("/")[-1]
+                        raw_loop_id = meta["url"].split("v=")[-1].split("&")[0] if "v=" in meta["url"] else meta["url"].split("/")[-1]
+                        loop_id = raw_loop_id.split("?")[0].split("&")[0]
                         
-                        # Step 2 Smart Selection Loop for Playlist items
-                        transcript_list = YouTubeTranscriptApi.list_transcripts(loop_id)
-                        try:
-                            # 1. Try finding manually created English captions
-                            srt_obj = transcript_list.find_transcript(['en'])
-                        except Exception:
-                            try:
-                                # 2. Fallback to auto-generated English captions
-                                srt_obj = transcript_list.find_generated_transcript(['en'])
-                            except Exception:
-                                # 3. Fallback to translating whatever language exists straight into English
-                                first_available = next(iter(transcript_list._manually_created_transcripts.values() or transcript_list._generated_transcripts.values()))
-                                srt_obj = first_available.translate('en')
-
-                        srt = srt_obj.fetch()
+                        # Fix invocation wrapper for playlist execution layers
+                        srt = youtube_transcript_api.YouTubeTranscriptApi.get_transcript(loop_id)
                         text_to_summarize = " ".join([item["text"] for item in srt])
                         lang = detect_language(text_to_summarize)
                         summary = summarize(text_to_summarize, req.summary_type, lang)
@@ -99,18 +88,17 @@ async def summarize_video(req: SummarizeRequest):
         else:
             audio_path, meta = download_audio(video_url)
             
-            # 🌟 CORE FAILOVER: Handled cleanly without requiring list_transcripts
+            # 🌟 CORE FAILOVER: Fixed module instance tracking attribute call
             if audio_path is None:
                 print(f"[API Guard] Audio stream blocked by YouTube. Activating Transcript Fallback for Video ID: {video_id}")
                 try:
-                    # Universal, standard extraction method that works across all library versions
-                    srt = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'en-US'])
-                    print("[Fallback Router] Successfully extracted English transcript lines.")
+                    # 🔗 FIXED CALL: Target via explicit module declaration namespace
+                    srt = youtube_transcript_api.YouTubeTranscriptApi.get_transcript(video_id)
+                    print("[Fallback Router] Successfully extracted clean transcript lines.")
                     
                     text_to_summarize = " ".join([item["text"] for item in srt])
                     lang = detect_language(text_to_summarize)
                     
-                    # Force downgrade out of timestamp layout because audio segmentation data is missing
                     summary_mode = "bullets" if req.summary_type == "timestamps" else req.summary_type
                     summary = summarize(text_to_summarize, summary_mode, lang)
                     
@@ -131,7 +119,7 @@ async def summarize_video(req: SummarizeRequest):
                     print(f"[Fallback Crash] Complete dead end: {str(transcript_err)}")
                     raise HTTPException(
                         status_code=500, 
-                        detail="YouTube bot security is blocking this request, and this video does not have any English captions or subtitles available to fall back on."
+                        detail="YouTube bot security is blocking this request, and this video does not have any captions or subtitles available to fall back on."
                     )
 
             # Standard pipeline execution if audio stream downloads successfully
@@ -159,7 +147,6 @@ async def summarize_video(req: SummarizeRequest):
             }
 
     except Exception as e:
-        # restored global error handler wrapper
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/clear-cache")
