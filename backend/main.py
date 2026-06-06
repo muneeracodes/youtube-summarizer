@@ -99,31 +99,14 @@ async def summarize_video(req: SummarizeRequest):
         else:
             audio_path, meta = download_audio(video_url)
             
-            # 🌟 CORE FAILOVER: If yt-dlp was blocked by bot-detection
+            # 🌟 CORE FAILOVER: Handled cleanly without requiring list_transcripts
             if audio_path is None:
-                print(f"[API Guard] Audio stream blocked by YouTube. Activating Robust Transcript Fallback Loop for Video ID: {video_id}")
+                print(f"[API Guard] Audio stream blocked by YouTube. Activating Transcript Fallback for Video ID: {video_id}")
                 try:
-                    # Retrieve the list of all available transcripts
-                    transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+                    # Universal, standard extraction method that works across all library versions
+                    srt = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'en-US'])
+                    print("[Fallback Router] Successfully extracted English transcript lines.")
                     
-                    try:
-                        # Strategy 1: Look for manually uploaded English subtitles
-                        srt_obj = transcript_list.find_transcript(['en'])
-                        print("[Fallback Router] Found manual English transcript track.")
-                    except Exception:
-                        try:
-                            # Strategy 2: Look for auto-generated English captions
-                            srt_obj = transcript_list.find_generated_transcript(['en'])
-                            print("[Fallback Router] Found auto-generated English transcript track.")
-                        except Exception:
-                            # Strategy 3: Grab whatever base language track exists and machine-translate it to English
-                            print("[Fallback Router] English unavailable. Fetching alternative language and auto-translating to English...")
-                            all_tracks = list(transcript_list._manually_created_transcripts.values()) + list(transcript_list._generated_transcripts.values())
-                            if not all_tracks:
-                                raise Exception("No raw caption files exist at all for this video.")
-                            srt_obj = all_tracks[0].translate('en')
-                    
-                    srt = srt_obj.fetch()
                     text_to_summarize = " ".join([item["text"] for item in srt])
                     lang = detect_language(text_to_summarize)
                     
@@ -143,11 +126,12 @@ async def summarize_video(req: SummarizeRequest):
                         "language": lang,
                         "summary": summary,
                     }
+                    
                 except Exception as transcript_err:
                     print(f"[Fallback Crash] Complete dead end: {str(transcript_err)}")
                     raise HTTPException(
                         status_code=500, 
-                        detail="YouTube security blocked the stream, and this video has absolutely no speech, captions, or subtitles available to parse."
+                        detail="YouTube bot security is blocking this request, and this video does not have any English captions or subtitles available to fall back on."
                     )
 
             # Standard pipeline execution if audio stream downloads successfully
@@ -175,6 +159,7 @@ async def summarize_video(req: SummarizeRequest):
             }
 
     except Exception as e:
+        # restored global error handler wrapper
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/clear-cache")
