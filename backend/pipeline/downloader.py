@@ -20,6 +20,8 @@ def download_audio(url: str, output_dir: str = "audio"):
     # Base options designed to emulate a standard mobile app interface
     ydl_opts = {
         "format": "bestaudio/best",
+        'cookiefile': 'cookies.txt', 
+       
         "outtmpl": f"{output_dir}/%(id)s.%(ext)s",
         "postprocessors": [{
             "key": "FFmpegExtractAudio",

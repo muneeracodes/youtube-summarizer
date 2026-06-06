@@ -93,7 +93,11 @@ async def summarize_video(req: SummarizeRequest):
                 print(f"[API Guard] Audio stream blocked by YouTube. Activating Transcript Fallback for Video ID: {video_id}")
                 try:
                     # 🔗 FIXED CALL: Target via explicit module declaration namespace
-                    srt = youtube_transcript_api.YouTubeTranscriptApi.get_transcript(video_id)
+
+                    api = YouTubeTranscriptApi()
+                    transcript_list = api.fetch(video_id)
+                    text = " ".join([snippet.text for snippet in transcript_list])
+                   
                     print("[Fallback Router] Successfully extracted clean transcript lines.")
                     
                     text_to_summarize = " ".join([item["text"] for item in srt])
