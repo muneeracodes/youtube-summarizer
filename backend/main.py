@@ -52,18 +52,31 @@ async def summarize_video(req: SummarizeRequest):
             audio_files, metas = download_audio(video_url)
             results = []
             
-            # If the download layer returns a tuple of lists
             for audio_path, meta in zip(audio_files, metas):
-                # Fallback implementation for playlists if a specific stream is blocked
                 if audio_path is None:
                     try:
                         loop_id = meta["url"].split("v=")[-1].split("&")[0] if "v=" in meta["url"] else meta["url"].split("/")[-1]
-                        srt = YouTubeTranscriptApi.get_transcript(loop_id)
+                        
+                        # Step 2 Smart Selection Loop for Playlist items
+                        transcript_list = YouTubeTranscriptApi.list_transcripts(loop_id)
+                        try:
+                            # 1. Try finding manually created English captions
+                            srt_obj = transcript_list.find_transcript(['en'])
+                        except Exception:
+                            try:
+                                # 2. Fallback to auto-generated English captions
+                                srt_obj = transcript_list.find_generated_transcript(['en'])
+                            except Exception:
+                                # 3. Fallback to translating whatever language exists straight into English
+                                first_available = next(iter(transcript_list._manually_created_transcripts.values() or transcript_list._generated_transcripts.values()))
+                                srt_obj = first_available.translate('en')
+
+                        srt = srt_obj.fetch()
                         text_to_summarize = " ".join([item["text"] for item in srt])
                         lang = detect_language(text_to_summarize)
                         summary = summarize(text_to_summarize, req.summary_type, lang)
                     except Exception:
-                        summary = "Skipped: YouTube blocked the audio stream for this video, and no public subtitles were found to fall back on."
+                        summary = "Skipped: YouTube blocked the audio stream for this video, and no usable subtitles were found to fall back on."
                         lang = "unknown"
                 else:
                     transcript_data = transcribe(audio_path, req.model_size)
@@ -86,17 +99,35 @@ async def summarize_video(req: SummarizeRequest):
         else:
             audio_path, meta = download_audio(video_url)
             
-            # 🌟 CORE FAILOVER: If yt-dlp was blocked by bot-detection, download_audio returns None
+            # 🌟 CORE FAILOVER: If yt-dlp was blocked by bot-detection
             if audio_path is None:
-                print(f"[API Guard] Audio stream blocked by YouTube. Activating Transcript Fallback for Video ID: {video_id}")
+                print(f"[API Guard] Audio stream blocked by YouTube. Activating Robust Transcript Fallback Loop for Video ID: {video_id}")
                 try:
-                    # Pull official raw text captions directly via API
-                    srt = YouTubeTranscriptApi.get_transcript(video_id)
-                    text_to_summarize = " ".join([item["text"] for item in srt])
+                    # Retrieve the list of all available transcripts
+                    transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
                     
+                    try:
+                        # Strategy 1: Look for manually uploaded English subtitles
+                        srt_obj = transcript_list.find_transcript(['en'])
+                        print("[Fallback Router] Found manual English transcript track.")
+                    except Exception:
+                        try:
+                            # Strategy 2: Look for auto-generated English captions
+                            srt_obj = transcript_list.find_generated_transcript(['en'])
+                            print("[Fallback Router] Found auto-generated English transcript track.")
+                        except Exception:
+                            # Strategy 3: Grab whatever base language track exists and machine-translate it to English
+                            print("[Fallback Router] English unavailable. Fetching alternative language and auto-translating to English...")
+                            all_tracks = list(transcript_list._manually_created_transcripts.values()) + list(transcript_list._generated_transcripts.values())
+                            if not all_tracks:
+                                raise Exception("No raw caption files exist at all for this video.")
+                            srt_obj = all_tracks[0].translate('en')
+                    
+                    srt = srt_obj.fetch()
+                    text_to_summarize = " ".join([item["text"] for item in srt])
                     lang = detect_language(text_to_summarize)
                     
-                    # Overwrite timestamp type because we do not have whisper segments data
+                    # Force downgrade out of timestamp layout because audio segmentation data is missing
                     summary_mode = "bullets" if req.summary_type == "timestamps" else req.summary_type
                     summary = summarize(text_to_summarize, summary_mode, lang)
                     
@@ -113,9 +144,10 @@ async def summarize_video(req: SummarizeRequest):
                         "summary": summary,
                     }
                 except Exception as transcript_err:
+                    print(f"[Fallback Crash] Complete dead end: {str(transcript_err)}")
                     raise HTTPException(
                         status_code=500, 
-                        detail="YouTube bot security is blocking this request, and this video does not have any English captions or subtitles available to fall back on."
+                        detail="YouTube security blocked the stream, and this video has absolutely no speech, captions, or subtitles available to parse."
                     )
 
             # Standard pipeline execution if audio stream downloads successfully
