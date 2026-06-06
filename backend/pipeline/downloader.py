@@ -1,8 +1,9 @@
 import yt_dlp
 import os
 
-
-_ffmpeg_dir = r"C:\ffmpeg\bin"
+# Dynamically set the FFmpeg directory based on the execution environment.
+# Local Windows path is used as a fallback if a global system binary is not found.
+_ffmpeg_dir = r"C:\ffmpeg\bin" if os.name == 'nt' else None
 
 def download_audio(url: str, output_dir: str = "audio"):
     os.makedirs(output_dir, exist_ok=True)
@@ -15,10 +16,21 @@ def download_audio(url: str, output_dir: str = "audio"):
             "preferredcodec": "mp3",
             "preferredquality": "192",
         }],
-        "ffmpeg_location": _ffmpeg_dir,
         "quiet": True,
         "no_warnings": True,
+        
+        # 🌟 BYPASS BOT DETECTION ON RENDER
+        # Configures client impersonation to spoof standard Safari web traffic patterns
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["web_safari"]
+            }
+        }
     }
+
+    # Only include the explicit ffmpeg_location parameter if running locally on Windows
+    if _ffmpeg_dir and os.path.exists(_ffmpeg_dir):
+        ydl_opts["ffmpeg_location"] = _ffmpeg_dir
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
