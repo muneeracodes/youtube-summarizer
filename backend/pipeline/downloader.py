@@ -1,13 +1,14 @@
 import yt_dlp
 import os
 
-# Dynamically set the FFmpeg directory based on the execution environment.
-# Local Windows path is used as a fallback if a global system binary is not found.
+# Cross-platform environment resolution for FFmpeg
 _ffmpeg_dir = r"C:\ffmpeg\bin" if os.name == 'nt' else None
 
 def download_audio(url: str, output_dir: str = "audio"):
     os.makedirs(output_dir, exist_ok=True)
 
+    # 🌟 ADVANCED PRODUCTION CONFIGURATION FOR YT-DLP
+    # Uses iOS mobile app headers to route requests safely past cloud datacenter blocks
     ydl_opts = {
         "format": "bestaudio/best",
         "outtmpl": f"{output_dir}/%(id)s.%(ext)s",
@@ -19,43 +20,73 @@ def download_audio(url: str, output_dir: str = "audio"):
         "quiet": True,
         "no_warnings": True,
         
-        # 🌟 BYPASS BOT DETECTION ON RENDER
-        # Configures client impersonation to spoof standard Safari web traffic patterns
+        # Emulate native mobile app behavior to bypass strict datacenter checks
         "extractor_args": {
             "youtube": {
-                "player_client": ["web_safari"]
+                "player_client": ["ios", "android"],
+                "skip": ["dash", "hls"]
             }
+        },
+        "http_headers": {
+            "User-Agent": "com.google.ios.youtube/19.17.2 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X; en_US)",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Cache-Control": "max-age=0",
         }
     }
 
-    # Only include the explicit ffmpeg_location parameter if running locally on Windows
     if _ffmpeg_dir and os.path.exists(_ffmpeg_dir):
         ydl_opts["ffmpeg_location"] = _ffmpeg_dir
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
 
-        if "entries" in info:
-            files, metas = [], []
-            for entry in info["entries"]:
-                if entry:
-                    files.append(f"{output_dir}/{entry['id']}.mp3")
-                    metas.append({
-                        "title": entry.get("title", "Unknown"),
-                        "duration": entry.get("duration", 0),
-                        "url": entry.get("webpage_url", url),
-                        "thumbnail": entry.get("thumbnail", ""),
-                    })
-            return files, metas
-        else:
-            path = f"{output_dir}/{info['id']}.mp3"
+            if "entries" in info:
+                files, metas = [], []
+                for entry in info["entries"]:
+                    if entry:
+                        files.append(f"{output_dir}/{entry['id']}.mp3")
+                        metas.append({
+                            "title": entry.get("title", "Unknown"),
+                            "duration": entry.get("duration", 0),
+                            "url": entry.get("webpage_url", url),
+                            "thumbnail": entry.get("thumbnail", ""),
+                        })
+                return files, metas
+            else:
+                path = f"{output_dir}/{info['id']}.mp3"
+                meta = {
+                    "title": info.get("title", "Unknown"),
+                    "duration": info.get("duration", 0),
+                    "url": info.get("webpage_url", url),
+                    "thumbnail": info.get("thumbnail", ""),
+                }
+                return path, meta
+                
+    except Exception as e:
+        # Fallback Strategy: If video extraction fails due to IP rate limits,
+        # extract metadata safely using the lightweight, unblocked flat-playlist parser
+        print(f"[Backup System] yt-dlp stream blocked. Activating lightweight meta parser: {str(e)}")
+        
+        fallback_opts = {
+            'extract_flat': True,
+            'skip_download': True,
+            'quiet': True
+        }
+        
+        with yt_dlp.YoutubeDL(fallback_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            video_id = url.split("v=")[-1].split("&")[0] if "v=" in url else url.split("/")[-1]
+            
             meta = {
-                "title": info.get("title", "Unknown"),
+                "title": info.get("title", "YouTube Video Resource"),
                 "duration": info.get("duration", 0),
-                "url": info.get("webpage_url", url),
-                "thumbnail": info.get("thumbnail", ""),
+                "url": url,
+                "thumbnail": f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg",
+                "use_transcript_fallback": True # Signal to pipeline to skip whisper and use subtitles
             }
-            return path, meta
+            return None, meta
 
 
 def is_playlist(url: str) -> bool:
