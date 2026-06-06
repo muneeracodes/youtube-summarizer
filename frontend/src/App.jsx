@@ -5,7 +5,10 @@ import StatusSteps from "./components/StatusSteps";
 import SummaryResult from "./components/SummaryResult";
 import Sidebar from "./components/Sidebar";
 import { summarizeVideo } from "./api/summarize";
-import './index.css'
+import './index.css';
+
+// Dynamically read your live Render backend base URL from Vercel's environment variables
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 export default function App() {
   const [loading, setLoading] = useState(false);
@@ -21,9 +24,15 @@ export default function App() {
 
     const steps = ["download", "transcribe", "detect", "summarize"];
     let i = 0;
+    
     const timer = setInterval(() => {
       i++;
-      if (i < steps.length) setStep(steps[i]);
+      if (i < steps.length) {
+        setStep(steps[i]);
+      } else {
+        // Keep the UI on "summarize" if the backend engine is processing a larger video load
+        clearInterval(timer);
+      }
     }, 8000);
 
     try {
@@ -41,10 +50,16 @@ export default function App() {
 
   const handleClearCache = async () => {
     try {
-      await fetch("/api/clear-cache", { method: "POST" });
-      alert("Audio cache cleared!");
-    } catch {
-      alert("Could not clear cache.");
+      // FIX: Point directly to your live production Render URL instead of local relative path
+      const response = await fetch(`${API_BASE_URL}/api/clear-cache`, { method: "POST" });
+      if (response.ok) {
+        alert("Audio cache cleared successfully!");
+      } else {
+        alert("Failed to clear backend cache.");
+      }
+    } catch (err) {
+      console.error("Cache clear error:", err);
+      alert("Could not connect to the server to clear cache.");
     }
   };
 
